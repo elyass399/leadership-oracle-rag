@@ -20,11 +20,11 @@ class LeadershipEngine:
         # 1. Loading & Chunking (Invariato)
         loader = PyPDFLoader(pdf_path)
         docs = loader.load()
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=50)
+        splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=100)
         self.chunks = splitter.split_documents(docs)
 
         # 2. Vector DB (Invariato)
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        embeddings = HuggingFaceEmbeddings(model_name="paraphrase-albert-small-v2")
         self.vector_store = FAISS.from_documents(self.chunks, embeddings)
         self.retriever = self.vector_store.as_retriever(search_kwargs={"k": 5})
 
