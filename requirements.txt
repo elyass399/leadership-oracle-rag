@@ -10,3 +10,4 @@ pypdf
 python-dotenv
 langchain-groq
 sentence-transformers
+pymongo
