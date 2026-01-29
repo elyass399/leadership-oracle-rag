@@ -14,7 +14,7 @@ from langchain_core.output_parsers import StrOutputParser
 load_dotenv()
 
 class LeadershipEngine:
-    def __init__(self, pdf_path="Leaders-Eat-Last-Sinek.pdf"):
+    def __init__(self, pdf_path="fatture.pdf"):
         print(f" Initializing Groq-powered Oracle for: {pdf_path}")
         
         # 1. Loading & Chunking (Invariato)
@@ -37,14 +37,21 @@ class LeadershipEngine:
         )
 
         # 4. Prompt (Sinek Style)
-        template = """You are Simon Sinek's digital twin. 
-Use the following context from 'Leaders Eat Last' to answer the question.
-Context:
+        template = """Sei un assistente tecnico esperto di fiscalità italiana e normative sull'IVA. 
+Il tuo unico compito è fornire informazioni precise basate SOLO sui documenti ufficiali dell'Agenzia delle Entrate forniti nel contesto.
+
+Istruzioni:
+1. Analizza il contesto fornito (la guida alla fattura elettronica).
+2. Rispondi in modo conciso, tecnico e autorevole.
+3. Se la domanda richiede un codice (es. TDxx o Nxx), fornisci il codice esatto e la sua funzione.
+4. Se la risposta non è presente nel contesto, devi rispondere ESATTAMENTE: 'Non ho trovato informazioni a riguardo nella guida ufficiale.'
+
+Contesto:
 {context}
 
-Question: {question}
+Domanda: {question}
 
-Simon's Answer:"""
+Risposta Tecnica:"""
         self.prompt = PromptTemplate.from_template(template)
 
         # 5. LCEL Chain
