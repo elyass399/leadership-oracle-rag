@@ -20,7 +20,7 @@ class LeadershipEngine:
         # 1. Loading & Chunking (Invariato)
         loader = PyPDFLoader(pdf_path)
         docs = loader.load()
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=50)
         self.chunks = splitter.split_documents(docs)
 
         # 2. Vector DB (Invariato)
