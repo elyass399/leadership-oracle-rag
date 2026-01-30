@@ -1,35 +1,42 @@
-# api.py (Aggiornato per l'Agenzia delle Entrate)
+# api.py (Versione Finale per il Deploy Leggero)
 
-import os
-from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse 
 from pydantic import BaseModel
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from datetime import datetime
+import os
 
-# Importiamo il motore RAG (assicurati che il pdf_path sia corretto)
-from rag_engine import LeadershipEngine # Nota: L'oggetto si chiama ancora 'LeadershipEngine'
+# Importiamo la FUNZIONE RAG e i dati dal file del motore
+from rag_engine import get_rag_chain, PDF_PATH, LLM_MODEL # Importiamo la funzione e le costanti
 
 load_dotenv()
 
-# --- CONFIGURAZIONE DATABASE (invariata) ---
-client = MongoClient(os.getenv("MONGO_URI"))
-db = client["leadership_oracle_db"] # Puoi cambiarlo in "fatture_db" se vuoi
-collection = db["chat_history"]
+# --- 1. CONFIGURAZIONE DATABASE (Leggerissima, solo per log) ---
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+try:
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    db = client["fatture_db"]
+    collection = db["chat_history"]
+    db_status = True
+except Exception:
+    db_status = False
 
-# --- INIZIALIZZAZIONE ---
-app = FastAPI(title="Fattura Elettronica Oracle")
-# AGGIUSTA IL NOME DEL PDF NEL CARICAMENTO
-oracle = LeadershipEngine(pdf_path="fatture.pdf") 
+# --- 2. INIZIALIZZAZIONE API (Niente Motore Pesante Qui) ---
+app = FastAPI(title="Agenzia Entrate Assistant")
 
 class Query(BaseModel):
     text: str
 
-# --- FRONTEND UI (Modificato per l'Agenzia delle Entrate) ---
+# Rimuoviamo la classe RispostaRag dal file finale per semplicità nel codice, 
+# ma nella versione completa andrebbe ripristinata per la validazione!
+
+# --- 3. FRONTEND UI (Invariata) ---
 @app.get("/", response_class=HTMLResponse)
 async def get_ui():
     return """
+    <!-- Il tuo codice HTML va qui, come lo hai scritto tu -->
     <!DOCTYPE html>
     <html>
     <head>
@@ -80,7 +87,8 @@ async def get_ui():
                 
                 // Rimuovi loader e aggiungi risposta
                 document.getElementById(loadingId).remove();
-                chat.innerHTML += `<div class="bg-green-700 text-white p-3 rounded-lg self-start w-fit">${data.answer}</div>`;
+                // Aggiungiamo la risposta del bot (ora è più semplice dato che la logica è nel rag_engine)
+                chat.innerHTML += `<div class="bg-green-700 text-white p-3 rounded-lg self-start w-fit">${data.answer}</div>`; 
                 chat.scrollTop = chat.scrollHeight;
             }
         </script>
@@ -88,17 +96,26 @@ async def get_ui():
     </html>
     """
 
+
 @app.post("/ask")
 async def ask_simon(query: Query):
     try:
-        response = oracle.ask(query.text)
-        log_entry = {
-            "user_query": query.text,
-            "bot_answer": response,
-            "timestamp": datetime.now(),
-            "platform": "Render Cloud"
-        }
-        collection.insert_one(log_entry)
-        return {"answer": response}
+        # CHIAMATA ON-DEMAND ALLA FUNZIONE ESTERNA
+        risultato = get_rag_chain(query.text)
+        
+        # Logica di salvataggio
+        if db_status:
+            log_entry = {
+                "user_query": query.text,
+                "bot_response": risultato['answer'],
+                "timestamp": datetime.now(),
+                "model": "llama-3.1-8b-groq"
+            }
+            collection.insert_one(log_entry)
+        
+        # Risposta (Il frontend si aspetta solo {answer: "..."})
+        return {"answer": risultato['answer']}
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Se fallisce, è un errore di RAM o di Groq/PDF
+        raise HTTPException(status_code=500, detail=f"Errore RAG: {e}")
