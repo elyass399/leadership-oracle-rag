@@ -1,30 +1,43 @@
-# rag_engine.py (Versione finale ottimizzata per Render/Free Tier)
-
+# rag_engine.py
 import os
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+# --- CAMBIO QUI: Importiamo Groq invece di Google ---
 from langchain_groq import ChatGroq 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from langchain_community.vectorstores import FAISS
 
 load_dotenv()
 
-# --- IMPOSTAZIONI GLOBALI ---
-# 1. Modello ULTRA-LEGGERO per compatibilità RAM
-LLM_MODEL = "llama-3.1-8b" 
-EMBEDDING_MODEL = "paraphrase-albert-small-v2"
-PDF_PATH = "fatture.pdf" 
-CHUNK_SIZE = 2000 # Max chunk size per minimizzare il conteggio vettori
+class LeadershipEngine:
+    def __init__(self, pdf_path="fatture.pdf"):
+        print(f" Initializing Groq-powered Oracle for: {pdf_path}")
+        
+        # 1. Loading & Chunking (Invariato)
+        loader = PyPDFLoader(pdf_path)
+        docs = loader.load()
+        splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=100)
+        self.chunks = splitter.split_documents(docs)
 
-# 2. Inizializzazione LLM (Una sola volta)
-LLM = ChatGroq(model=LLM_MODEL, temperature=0.1, groq_api_key=os.getenv("GROQ_API_KEY"))
+        # 2. Vector DB (Invariato)
+        embeddings = HuggingFaceEmbeddings(model_name="paraphrase-albert-small-v2")
+        self.vector_store = FAISS.from_documents(self.chunks, embeddings)
+        self.retriever = self.vector_store.as_retriever(search_kwargs={"k": 5})
 
-# 3. Prompt Template (Il tuo template tecnico)
-TEMPLATE = """Sei un assistente tecnico esperto di fiscalità italiana e normative sull'IVA. 
+        # 3. Brain (GROQ)
+        # Usiamo llama-3.3-70b-versatile per la massima qualità
+        self.llm = ChatGroq(
+            model="llama-3.3-70b-versatile", 
+            temperature=0.3,
+            groq_api_key=os.getenv("GROQ_API_KEY")
+        )
+
+        # 4. Prompt (Sinek Style)
+        template = """Sei un assistente tecnico esperto di fiscalità italiana e normative sull'IVA. 
 Il tuo unico compito è fornire informazioni precise basate SOLO sui documenti ufficiali dell'Agenzia delle Entrate forniti nel contesto.
 
 Istruzioni:
@@ -39,39 +52,18 @@ Contesto:
 Domanda: {question}
 
 Risposta Tecnica:"""
+        self.prompt = PromptTemplate.from_template(template)
 
+        # 5. LCEL Chain
+        self.chain = (
+            {"context": self.retriever | self.format_docs, "question": RunnablePassthrough()}
+            | self.prompt
+            | self.llm
+            | StrOutputParser()
+        )
 
-def get_rag_chain(query: str):
-    """
-    Funzione RAG on-demand: Carica, indicizza, esegue e libera la RAM.
-    """
-    
-    # 1. Carica e Chunk - La parte lenta eseguita ad ogni richiesta
-    loader = PyPDFLoader(PDF_PATH)
-    docs = loader.load()
-    splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=100)
-    chunks = splitter.split_documents(docs)
-    
-    # 2. Embedding e Vector Store (Consuma RAM temporaneamente)
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-    vector_store = FAISS.from_documents(chunks, embeddings)
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3}) # K=3 per massima efficienza
-    
-    # 3. La catena LCEL
-    rag_chain = (
-        {
-            "context": retriever | (lambda x: "\n\n".join(doc.page_content for doc in x)), 
-            "question": RunnablePassthrough()
-        }
-        | PromptTemplate.from_template(TEMPLATE)
-        | LLM
-        | StrOutputParser()
-    )
-    
-    # 4. Eseguiamo
-    response = rag_chain.invoke(query)
-    source_docs = retriever.invoke(query) 
-    
-    sources = [doc.metadata.get('page') for doc in source_docs]
-    
-    return {"answer": response, "sources": sources}
+    def format_docs(self, docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    def ask(self, query: str):
+        return self.chain.invoke(query)
